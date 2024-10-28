@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">Programming1</string>
+    <string name="other_radio_name">other</string>
+    <string name="walking_radio_name">walking</string>
+    <string name="running_radio_name">running</string>
+    <string name="standing_radio_name">standing</string>
+    <string name="sitting_radio_name">sitting</string>
+    <string name="upstairs_radio_name">upstairs</string>
+    <string name="downstairs_radio_name">downstairs</string>
+    <string name="start_button_name">Start/Resume</string>
+    <string name="pause_button_name">Stop/Resume</string>
+    <string name="discard_button_name">Discard</string>
+    <string name="recording_for">Recording for</string>
+
+</resources>
