@@ -42,19 +42,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var mAccelerometerThread: HandlerThread
     private lateinit var mGyroscopeThread: HandlerThread
     private lateinit var mGravityThread: HandlerThread
-    private lateinit var mWriterThread: HandlerThread
 
     private lateinit var mAccelerometerWorker: Handler
     private lateinit var mGyroscopeWorker: Handler
     private lateinit var mGravityWorker: Handler
-    private lateinit var mWriterWorker: Handler
 
     private val sensorsValuesMap = mapOf(
         Sensor.TYPE_LINEAR_ACCELERATION to "linear",
         Sensor.TYPE_GRAVITY to "gravity",
         Sensor.TYPE_GYROSCOPE to "gyro"
     )
-
 
     private val radioButtonValuesMap = mapOf(
         R.id.radio_button_0 to 0,
@@ -76,7 +73,6 @@ class MainActivity : AppCompatActivity() {
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
             insets
         }
-
         checkFileArchitecture()
 
         mSensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -88,17 +84,14 @@ class MainActivity : AppCompatActivity() {
         mAccelerometerThread = HandlerThread("Accelerometer Thread")
         mGravityThread = HandlerThread("Gravity Thread")
         mGyroscopeThread = HandlerThread("Gyroscope Thread")
-        mWriterThread = HandlerThread("Writer Thread")
 
         mAccelerometerThread.start()
         mGravityThread.start()
         mGyroscopeThread.start()
-        mWriterThread.start()
 
         mAccelerometerWorker = Handler(mAccelerometerThread.looper)
         mGravityWorker = Handler(mGravityThread.looper)
         mGyroscopeWorker = Handler(mGyroscopeThread.looper)
-        mWriterWorker = Handler(mWriterThread.looper)
 
         buttonHandling()
     }
@@ -148,7 +141,6 @@ class MainActivity : AppCompatActivity() {
             val file = File("$externalFilesDir/49005113/$activityClass/$sensorName.csv")
             file.writeText("")
         }
-
     }
 
     private fun startRecording(activityClass : Int) {
