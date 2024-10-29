@@ -18,34 +18,31 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.Looper
 import android.util.Log
 import android.view.View
 import java.io.File
 import java.io.FileWriter
+import java.io.RandomAccessFile
+import java.util.LinkedList
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var mSensorManager : SensorManager
+
+    private var frequency : Int = 10000 // 100Hz
+    private var isRecording : Boolean = false
+    private var classBeingRecorded : Int? = null
+    private var recordTimeStamp : Long = 0
 
     private var mAccelerometer: Sensor? = null
     private var mGyroscope: Sensor? = null
     private var mGravity: Sensor? = null
-
     private var mSensorEventListenerAccelerometer: SensorEventListener? = null
     private var mSensorEventListenerGyroscope: SensorEventListener? = null
     private var mSensorEventListenerGravity: SensorEventListener? = null
-
-    private var isRecording : Boolean = false
-    private var classBeingRecorded : Int? = null
-    private var isPaused : Boolean = false
-
-    private lateinit var mAccelerometerThread: HandlerThread
-    private lateinit var mGyroscopeThread: HandlerThread
-    private lateinit var mGravityThread: HandlerThread
-
-    private lateinit var mAccelerometerWorker: Handler
-    private lateinit var mGyroscopeWorker: Handler
-    private lateinit var mGravityWorker: Handler
+    private val tempAccelerometerQueue : MutableList<FloatArray> = mutableListOf()
+    private val tempGyroscopeQueue : MutableList<FloatArray> = mutableListOf()
+    private val tempGravityQueue : MutableList<FloatArray> = mutableListOf()
 
     private val sensorsValuesMap = mapOf(
         Sensor.TYPE_LINEAR_ACCELERATION to "linear",
@@ -62,6 +59,25 @@ class MainActivity : AppCompatActivity() {
         R.id.radio_button_5 to 5,
         R.id.radio_button_6 to 6
     )
+
+    private lateinit var mSensorManager : SensorManager
+
+    private lateinit var mAccelerometerThread: HandlerThread
+    private lateinit var mGyroscopeThread: HandlerThread
+    private lateinit var mGravityThread: HandlerThread
+    private lateinit var mAccelerometerWriterThread: HandlerThread
+    private lateinit var mGyroscopeWriterThread: HandlerThread
+    private lateinit var mGravityWriterThread: HandlerThread
+
+    private lateinit var mAccelerometerWorker: Handler
+    private lateinit var mGyroscopeWorker: Handler
+    private lateinit var mGravityWorker: Handler
+    private lateinit var mAccelerometerWriterWorker: Handler
+    private lateinit var mGyroscopeWriterWorker: Handler
+    private lateinit var mGravityWriterWorker: Handler
+
+    private var delayHandler : Handler = Handler(Looper.getMainLooper())
+    private lateinit var startRecordingRunnable: Runnable
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -84,14 +100,89 @@ class MainActivity : AppCompatActivity() {
         mAccelerometerThread = HandlerThread("Accelerometer Thread")
         mGravityThread = HandlerThread("Gravity Thread")
         mGyroscopeThread = HandlerThread("Gyroscope Thread")
+        mAccelerometerWriterThread  = HandlerThread("Accelerometer Writer Thread")
+        mGravityWriterThread  = HandlerThread("Gravity Writer Thread")
+        mGyroscopeWriterThread  = HandlerThread("GyroscopeWriter Thread")
 
         mAccelerometerThread.start()
         mGravityThread.start()
         mGyroscopeThread.start()
+        mAccelerometerWriterThread.start()
+        mGravityWriterThread.start()
+        mGyroscopeWriterThread.start()
 
         mAccelerometerWorker = Handler(mAccelerometerThread.looper)
         mGravityWorker = Handler(mGravityThread.looper)
         mGyroscopeWorker = Handler(mGyroscopeThread.looper)
+        mAccelerometerWriterWorker = Handler(mAccelerometerWriterThread.looper)
+        mGravityWriterWorker = Handler(mGravityWriterThread.looper)
+        mGyroscopeWriterWorker = Handler(mGyroscopeWriterThread.looper)
+
+        mSensorEventListenerAccelerometer = object : SensorEventListener {
+            @SuppressLint("DefaultLocale")
+            override fun onSensorChanged(event: SensorEvent?) {
+                if (event?.sensor?.type == Sensor.TYPE_LINEAR_ACCELERATION) {
+                    val values = floatArrayOf(event.values[0], event.values[1], event.values[2])
+                    tempAccelerometerQueue.add(values)
+                    runOnUiThread {
+                        run {
+                            findViewById<TextView>(R.id.accelerometer_x).text = String.format("acc_x :%f", values[0])
+                            findViewById<TextView>(R.id.accelerometer_y).text = String.format("acc_x :%f", values[1])
+                            findViewById<TextView>(R.id.accelerometer_z).text = String.format("acc_x :%f", values[2])
+                        }
+                    }
+                }
+            }
+
+            override fun onAccuracyChanged(p0 : Sensor, p1 : Int) {}
+        }
+        mSensorEventListenerGyroscope =  object : SensorEventListener {
+            @SuppressLint("DefaultLocale")
+            override fun onSensorChanged(event: SensorEvent?) {
+                if (event?.sensor?.type == Sensor.TYPE_GYROSCOPE) {
+                    val values = floatArrayOf(event.values[0], event.values[1], event.values[2])
+                    //writeResultOnFile(Sensor.TYPE_GYROSCOPE,activityClass,values)
+                    tempGyroscopeQueue.add(values)
+                    runOnUiThread {
+                        run {
+                            findViewById<TextView>(R.id.rotation_x).text = String.format("gyr_x :%f", values[0])
+                            findViewById<TextView>(R.id.rotation_y).text = String.format("gyr_x :%f", values[1])
+                            findViewById<TextView>(R.id.rotation_z).text = String.format("gyr_x :%f", values[2])
+                        }
+                    }
+                }
+            }
+            override fun onAccuracyChanged(p0 : Sensor, p1 : Int) {}
+        }
+        mSensorEventListenerGravity = object : SensorEventListener {
+            @SuppressLint("DefaultLocale")
+            override fun onSensorChanged(event: SensorEvent?) {
+                if (event?.sensor?.type == Sensor.TYPE_GRAVITY) {
+                    val values = floatArrayOf(event.values[0], event.values[1], event.values[2])
+                    //writeResultOnFile(Sensor.TYPE_GRAVITY,activityClass,values)
+                    tempGravityQueue.add(values)
+                    runOnUiThread {
+                        run {
+                            findViewById<TextView>(R.id.gravity_x).text = String.format("grv_x :%f", values[0])
+                            findViewById<TextView>(R.id.gravity_y).text = String.format("grv_x :%f", values[1])
+                            findViewById<TextView>(R.id.gravity_z).text = String.format("grv_x :%f", values[2])
+                        }
+                    }
+                }
+            }
+            override fun onAccuracyChanged(p0 : Sensor, p1 : Int) {}
+        }
+
+        // Runnable made to delay the beginning of the recording of 5 seconds to let the user put the phone in his pocket,
+        // or let him stop recording before the first 5 seconds
+        startRecordingRunnable = Runnable {
+            mSensorManager.registerListener(mSensorEventListenerAccelerometer, mAccelerometer, frequency,mAccelerometerWorker)
+            mSensorManager.registerListener(mSensorEventListenerGyroscope, mGyroscope, frequency,mGyroscopeWorker)
+            mSensorManager.registerListener(mSensorEventListenerGravity , mGravity, frequency,mGravityWorker)
+            mAccelerometerWriterWorker.postDelayed(dataWritingAccelerometer, 5000)
+            mGravityWriterWorker.postDelayed(dataWritingGravity, 5000)
+            mGyroscopeWriterWorker.postDelayed(dataWritingGyroscope, 5000)
+        }
 
         buttonHandling()
     }
@@ -146,80 +237,31 @@ class MainActivity : AppCompatActivity() {
     private fun startRecording(activityClass : Int) {
         isRecording = true
         classBeingRecorded = activityClass
-        isPaused = false
-        mSensorEventListenerAccelerometer = object : SensorEventListener {
-            @SuppressLint("DefaultLocale")
-            override fun onSensorChanged(event: SensorEvent?) {
-                if (event?.sensor?.type == Sensor.TYPE_LINEAR_ACCELERATION) {
-                    val values = floatArrayOf(event.values[0], event.values[1], event.values[2])
-                    writeResultOnFile(Sensor.TYPE_LINEAR_ACCELERATION,activityClass,values)
-                    runOnUiThread {
-                        run {
-                            findViewById<TextView>(R.id.accelerometer_x).text = String.format("acc_x :%f", values[0])
-                            findViewById<TextView>(R.id.accelerometer_y).text = String.format("acc_x :%f", values[1])
-                            findViewById<TextView>(R.id.accelerometer_z).text = String.format("acc_x :%f", values[2])
-                        }
-                    }
-                }
-            }
-
-            override fun onAccuracyChanged(p0 : Sensor, p1 : Int) {}
-        }
-        mSensorManager.registerListener(mSensorEventListenerAccelerometer, mAccelerometer, 10000,mAccelerometerWorker)
-
-        mSensorEventListenerGyroscope =  object : SensorEventListener {
-            @SuppressLint("DefaultLocale")
-            override fun onSensorChanged(event: SensorEvent?) {
-                if (event?.sensor?.type == Sensor.TYPE_GYROSCOPE) {
-                    val values = floatArrayOf(event.values[0], event.values[1], event.values[2])
-                    writeResultOnFile(Sensor.TYPE_GYROSCOPE,activityClass,values)
-                    runOnUiThread {
-                        run {
-                            findViewById<TextView>(R.id.rotation_x).text = String.format("gyr_x :%f", values[0])
-                            findViewById<TextView>(R.id.rotation_y).text = String.format("gyr_x :%f", values[1])
-                            findViewById<TextView>(R.id.rotation_z).text = String.format("gyr_x :%f", values[2])
-                        }
-                    }
-                }
-            }
-
-            override fun onAccuracyChanged(p0 : Sensor, p1 : Int) {}
-        }
-        mSensorManager.registerListener(mSensorEventListenerGyroscope, mGyroscope, 10000,mGyroscopeWorker)
-
-        mSensorEventListenerGravity = object : SensorEventListener {
-            @SuppressLint("DefaultLocale")
-            override fun onSensorChanged(event: SensorEvent?) {
-                if (event?.sensor?.type == Sensor.TYPE_GRAVITY) {
-                    val values = floatArrayOf(event.values[0], event.values[1], event.values[2])
-                    writeResultOnFile(Sensor.TYPE_GRAVITY,activityClass,values)
-                    runOnUiThread {
-                        run {
-                            findViewById<TextView>(R.id.gravity_x).text = String.format("grv_x :%f", values[0])
-                            findViewById<TextView>(R.id.gravity_y).text = String.format("grv_x :%f", values[1])
-                            findViewById<TextView>(R.id.gravity_z).text = String.format("grv_x :%f", values[2])
-                        }
-                    }
-                }
-            }
-            override fun onAccuracyChanged(p0 : Sensor, p1 : Int) {}
-        }
-        mSensorManager.registerListener(mSensorEventListenerGravity , mGravity, 10000,mGravityWorker)
+        delayHandler.postDelayed(startRecordingRunnable,5000)
     }
 
     private fun stopRecording() {
         isRecording = false
-        isPaused = false
         mSensorManager.unregisterListener(mSensorEventListenerAccelerometer,mAccelerometer)
         mSensorManager.unregisterListener(mSensorEventListenerGyroscope,mGyroscope)
         mSensorManager.unregisterListener(mSensorEventListenerGravity,mGravity)
+        try {
+            delayHandler.removeCallbacks(startRecordingRunnable)
+        } catch (e: Exception) {
+            Log.d("No more delay",e.toString())
+        }
+        try {
+            mAccelerometerWriterWorker.removeCallbacks(dataWritingAccelerometer)
+            mGravityWriterWorker.removeCallbacks(dataWritingGravity)
+            mGyroscopeWriterWorker.removeCallbacks(dataWritingGyroscope)
+        } catch (e: Exception) {
+            Log.d("No such callbacks",e.toString())
+        }
+        classBeingRecorded = null
     }
 
     private fun discardRecording(activityClass : Int?) {
-        stopRecording()
         emptyFile(activityClass)
-        isRecording = false
-        isPaused = false
     }
 
     @SuppressLint("SetTextI18n")
@@ -243,32 +285,32 @@ class MainActivity : AppCompatActivity() {
                 val activityClass = radioButtonValuesMap[action.id]
                 if (activityClass != null) {
                     val activityRecordedView = findViewById<TextView>(R.id.activity_recorded)
+                    buttonDiscard.visibility = View.INVISIBLE
                     activityRecordedView.visibility = View.VISIBLE
                     activityRecordedView.text = "Recording ${action.text}"
                     classBeingRecorded = activityClass
+                    recordTimeStamp = System.currentTimeMillis()
                     startRecording(activityClass)
                 }
             } else {
                 Toast.makeText(this, "Already recording...", Toast.LENGTH_SHORT).show()
             }
         }
-
+        // If we are recording, we check that the checked radio button is the one
+        // corresponding to the recording class. If it is not, we notice the user. If it is,
+        // we pause the recording
         buttonPause.setOnClickListener {
             if (isRecording) {
-                // If we are recording, we check that the checked radio button is the one
-                // corresponding to the recording class. If it is not, we notice the user. If it is,
-                // we pause the recording
                 val action = findViewById<RadioButton>(radioGroup.checkedRadioButtonId)
                 val activityClass = radioButtonValuesMap[action.id]
                 if (activityClass != classBeingRecorded){
                     Toast.makeText(this, "You need to select the class which is recording", Toast.LENGTH_SHORT).show()
                 }else {
                     val activityRecordedView = findViewById<TextView>(R.id.activity_recorded)
+                    buttonDiscard.visibility = View.VISIBLE
                     activityRecordedView.text = "Paused recording ${action.text}"
                     stopRecording()
                 }
-            } else if (isPaused) {
-                Toast.makeText(this, "Already paused...", Toast.LENGTH_SHORT).show()
             } else {
                 Toast.makeText(this, "Not recording...", Toast.LENGTH_SHORT).show()
             }
@@ -282,6 +324,47 @@ class MainActivity : AppCompatActivity() {
             discardRecording(activityClass)
             Toast.makeText(this, "Discarded ${action.text}", Toast.LENGTH_SHORT).show()
 
+        }
+    }
+
+
+    // Those runnable are made to write the data in temporary queue each 5 seconds to the three files
+    private val dataWritingAccelerometer = object : Runnable {
+        override fun run() {
+            if (isRecording) {
+                val dataToWrite = ArrayList(tempAccelerometerQueue)
+                dataToWrite.forEach { values ->
+                    writeResultOnFile(Sensor.TYPE_LINEAR_ACCELERATION, classBeingRecorded, values)
+                }
+                tempAccelerometerQueue.clear()
+                mAccelerometerWriterWorker.postDelayed(this, 5000)
+            }
+        }
+    }
+
+    private val dataWritingGyroscope = object : Runnable {
+        override fun run() {
+            if (isRecording) {
+                val dataToWrite = ArrayList(tempGyroscopeQueue)
+                dataToWrite.forEach { values ->
+                    writeResultOnFile(Sensor.TYPE_GYROSCOPE, classBeingRecorded, values)
+                }
+                tempGyroscopeQueue.clear()
+                mGyroscopeWriterWorker.postDelayed(this, 5000)
+            }
+        }
+    }
+
+    private val dataWritingGravity = object : Runnable {
+        override fun run() {
+            if (isRecording) {
+                val dataToWrite = ArrayList(tempGravityQueue)
+                dataToWrite.forEach { values ->
+                    writeResultOnFile(Sensor.TYPE_GRAVITY, classBeingRecorded, values)
+                }
+                tempGravityQueue.clear()
+                mGravityWriterWorker.postDelayed(this, 5000)
+            }
         }
     }
 
